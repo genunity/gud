@@ -8,6 +8,7 @@ from time import sleep
 import logging
 from boto3 import session
 from botocore.exceptions import ClientError
+import uuid
 
 logging.basicConfig(
     format='%(asctime)s|%(name).10s|%(levelname).5s: %(message)s',
@@ -16,7 +17,7 @@ log = logging.getLogger('greengo')
 log.setLevel(logging.DEBUG)
 
 
-DEFINITION_FILE = 'greengo.yaml'
+DEFINITION_FILE = 'gud.yaml'
 MAGIC_DIR = '.gg'
 STATE_FILE = os.path.join(MAGIC_DIR, 'gg_state.json')
 
@@ -51,25 +52,29 @@ class GroupCommands(object):
                       "See https://github.com/greengo for details.")
             exit(-1)
 
-        self.name = self.group['Group']['name']
+        # self.name = self.group['Group']['name']
         self._LAMBDA_ROLE_NAME = "{0}_Lambda_Role".format(self.name)
-
         _mkdir(MAGIC_DIR)
         self.state = _load_state()
+        if self.state:
+            self.uuid = self.state['id']
+        else:
+            self.uuid = str(uuid.uuid4())
+        self.name = "G"+self.uuid
 
     def create(self):
         if self.state:
             log.error("Previously created group exists. Remove before creating!")
             return False
 
-        log.info("[BEGIN] creating group {0}".format(self.group['Group']['name']))
+        log.info("[BEGIN] creating group {0}".format(self.name))
 
         # TODO: create_lambda handles self.state directly.
         #       _create_cores leaves it to a caller. Refactor?
 
         # 1. Create group
         # TODO: create group at the end, with "initial version"?
-        group = rinse(self._gg.create_group(Name=self.group['Group']['name']))
+        group = rinse(self._gg.create_group(Name=self.name))
         self.state['Group'] = group
         _update_state(self.state)
         # Must update state on every step, else how can I clean?
@@ -79,6 +84,7 @@ class GroupCommands(object):
         core_def, cores = self._create_cores()
         self.state['Cores'] = cores
         self.state['CoreDefinition'] = core_def
+        self.state['id'] = self.uuid
         _update_state(self.state)
 
         # 3. Create Resources - policies for local and ML resource access.
@@ -253,6 +259,12 @@ class GroupCommands(object):
         # then LambdaDefinitions should also be updated.
 
         log.info("Lambdas function {0} updated OK!".format(lambda_name))
+
+    # def create_fn_defn(self):
+    #     fd = self._gg.create_function_definition(
+    #         Name='d1Site-dev-d1Site',
+    #         InitialVersion={'Functions': functions}
+    #     )
 
     def create_lambdas(self, update_group_version=True):
         if not self.group.get('Lambdas'):
@@ -579,7 +591,7 @@ class GroupCommands(object):
 
         for core in self.group['Cores']:
             try:
-                name = core['name']
+                name = self.uuid
                 log.info("Creating a thing for core {0}".format(name))
                 keys_cert = rinse(self._iot.create_keys_and_certificate(setAsActive=True))
                 core_thing = rinse(self._iot.create_thing(thingName=name))
