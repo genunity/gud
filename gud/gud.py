@@ -53,7 +53,6 @@ class GroupCommands(object):
             exit(-1)
 
         # self.name = self.group['Group']['name']
-        self._LAMBDA_ROLE_NAME = "{0}_Lambda_Role".format(self.name)
         _mkdir(MAGIC_DIR)
         self.state = _load_state()
         if self.state:
@@ -61,6 +60,7 @@ class GroupCommands(object):
         else:
             self.uuid = str(uuid.uuid4())
         self.name = "G"+self.uuid
+        self._LAMBDA_ROLE_NAME = "{0}_Lambda_Role".format(self.name)
 
     def create(self):
         if self.state:
