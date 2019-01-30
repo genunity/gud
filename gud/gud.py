@@ -115,10 +115,10 @@ class GroupCommands(object):
         log.info("[END] creating group {0}".format(self.group['Group']['name']))
 
     def _create_table_entry(self):
-        thingTable = self._dynamodb.Table(self.group['tables']['thingTable'])
-        self.group['thing']['id'] = self.id
+        thingTable = self._dynamodb.Table(self.group['DynamoTable'])
+        self.group['Device']['id'] = self.id
         thingTable.put_item(
-            Item=self.thing
+            Item=self.group['Device']
         )
 
     def create_root_cert(self):
