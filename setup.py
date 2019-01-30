@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="gud",
-    version="0.0.1",
+    version="0.0.2",
     author="James Whiteman",
     author_email="james.whiteman@gmail.com",
     description="branch of greengo",

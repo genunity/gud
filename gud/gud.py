@@ -9,6 +9,7 @@ import logging
 from boto3 import session
 from botocore.exceptions import ClientError
 import uuid
+import urllib
 
 logging.basicConfig(
     format='%(asctime)s|%(name).10s|%(levelname).5s: %(message)s',
@@ -36,13 +37,12 @@ class GroupCommands(object):
             exit(-1)
 
         log.info("AWS credentials found for region '{}'".format(self._region))
-
         self._gg = s.client("greengrass")
         self._iot = s.client("iot")
         self._lambda = s.client("lambda")
         self._iam = s.client("iam")
         self._iot_endpoint = self._iot.describe_endpoint()['endpointAddress']
-
+        self._dynamodb = s.resource('dynamodb')
         try:
             with open(DEFINITION_FILE, 'r') as f:
                 self.group = self.group = yaml.safe_load(f)
@@ -93,12 +93,18 @@ class GroupCommands(object):
         # 4. Create Lambda functions and function definitions
         #    Lambda may have dependencies on resources.
         #    TODO: refactor to take dependencies into account
-        self.create_lambdas(update_group_version=False)
+        if 'Lambdas' in self.group:
+            self.create_lambdas(update_group_version=False)
 
+        if 'ExistingLambdas' in self.group:
+            self.create_fn_defn()
         # 5. Create devices (coming soon)
 
+        if 'DynamoTable' in self.group:
+            self._create_table_entry()
         # 6. Create subscriptions
-        self.create_subscriptions(update_group_version=False)
+        if 'Subscriptions' in self.group:
+            self.create_subscriptions(update_group_version=False)
 
         # 7. Create logger definitions
         self.create_loggers()  # TODO: I'll also need group-version update to change it later...
@@ -107,6 +113,17 @@ class GroupCommands(object):
         self.create_group_version()
 
         log.info("[END] creating group {0}".format(self.group['Group']['name']))
+
+    def _create_table_entry(self):
+        thingTable = self._dynamodb.Table(self.group['tables']['thingTable'])
+        self.group['thing']['id'] = self.id
+        thingTable.put_item(
+            Item=self.thing
+        )
+
+    def create_root_cert(self):
+        if not os.path.isfile(self.group['certs']['keypath']+"/root-CA.crt"):
+            urllib.urlretrieve("https://www.symantec.com/content/en/us/enterprise/verisign/roots/VeriSign-Class%203-Public-Primary-Certification-Authority-G5.pem",self.group['certs']['keypath']+"/root-CA.crt")
 
     def deploy(self):
         if not self.state:
@@ -260,11 +277,27 @@ class GroupCommands(object):
 
         log.info("Lambdas function {0} updated OK!".format(lambda_name))
 
-    # def create_fn_defn(self):
-    #     fd = self._gg.create_function_definition(
-    #         Name='d1Site-dev-d1Site',
-    #         InitialVersion={'Functions': functions}
-    #     )
+    def create_fn_defn(self):
+        for l in self.group['ExistingLambdas']:
+            functions = []
+            functions.append({
+                'Id': l['name'],
+                'FunctionArn': l['aliasarn'],
+                'FunctionConfiguration': l['greengrassConfig']
+            })
+            fd = self._gg.create_function_definition(
+                Name=l['name'],
+                InitialVersion={'Functions': functions}
+            )
+            self.state['FunctionDefinition'] = rinse(fd)
+            _update_state(self.state)
+
+            fd_ver = self._gg.get_function_definition_version(
+                FunctionDefinitionId=self.state['FunctionDefinition']['Id'],
+                FunctionDefinitionVersionId=self.state['FunctionDefinition']['LatestVersion'])
+
+            self.state['FunctionDefinition']['LatestVersionDetails'] = rinse(fd_ver)
+            _update_state(self.state)
 
     def create_lambdas(self, update_group_version=True):
         if not self.group.get('Lambdas'):
@@ -744,7 +777,7 @@ class GroupCommands(object):
 
         config = {
             "coreThing": {
-                "caPath": "root.ca.pem",
+                "caPath": "root-CA.crt",
                 "certPath": core_thing['thingName'] + ".pem",
                 "keyPath": core_thing['thingName'] + ".key",
                 "thingArn": core_thing['thingArn'],
