@@ -116,7 +116,7 @@ class GroupCommands(object):
 
     def _create_table_entry(self):
         thingTable = self._dynamodb.Table(self.group['DynamoTable'])
-        self.group['Device']['id'] = self.id
+        self.group['Device']['id'] = self.uuid
         thingTable.put_item(
             Item=self.group['Device']
         )
