@@ -89,7 +89,7 @@ class GroupCommands(object):
 
         # 3. Create Resources - policies for local and ML resource access.
         self.create_resources()
-
+        self.create_root_cert()
         # 4. Create Lambda functions and function definitions
         #    Lambda may have dependencies on resources.
         #    TODO: refactor to take dependencies into account
@@ -122,7 +122,7 @@ class GroupCommands(object):
         )
 
     def create_root_cert(self):
-        if not os.path.isfile(self.group['certs']['keypath']+"/root-CA.crt"):
+        if not os.path.isfile(self.group['Cores']['key_path']+"/root-CA.crt"):
             urllib.urlretrieve("https://www.symantec.com/content/en/us/enterprise/verisign/roots/VeriSign-Class%203-Public-Primary-Certification-Authority-G5.pem",self.group['certs']['keypath']+"/root-CA.crt")
 
     def deploy(self):
