@@ -39,10 +39,11 @@ class GroupCommands(object):
         log.info("AWS credentials found for region '{}'".format(self._region))
         self._gg = s.client("greengrass")
         self._iot = s.client("iot")
+        self._iot_data_plane = s.client("iot-data")
         self._lambda = s.client("lambda")
         self._iam = s.client("iam")
         self._iot_endpoint = self._iot.describe_endpoint()['endpointAddress']
-        self._dynamodb = s.resource('dynamodb')
+        self._dynamodb = s.client('dynamodb')
         try:
             with open(DEFINITION_FILE, 'r') as f:
                 self.group = self.group = yaml.safe_load(f)
@@ -112,18 +113,70 @@ class GroupCommands(object):
         # LAST. Add all the constituent parts to the Greengrass Group
         self.create_group_version()
 
+        # init Core Shadow 
+        self._create_shadow()
+
         log.info("[END] creating group {0}".format(self.group['Group']['name']))
 
+    def dict_to_item(self):
+        self.group['Device']['id'] = self.uuid.encode('ascii', 'ignore')
+        print(self.group['Device'])
+        raw = self.group['Device']
+        if type(raw) is dict:
+            resp = {}
+            for k,v in raw.iteritems():
+                if type(v) is str:
+                    resp[k] = {
+                        'S': v
+                    }
+                elif type(v) is int:
+                    resp[k] = {
+                        'I': str(v)
+                    }
+                elif type(v) is dict:
+                    resp[k] = {
+                        'M': raw.dict_to_item(v)
+                    }
+                elif type(v) is list:
+                    resp[k] = []
+                    for i in v:
+                        resp[k].append(raw.dict_to_item(i))
+
+            return resp
+        elif type(raw) is str:
+            return {
+                'S': raw
+            }
+        elif type(raw) is int:
+            return {
+                'I': str(raw)
+            }
+
     def _create_table_entry(self):
-        thingTable = self._dynamodb.Table(self.group['DynamoTable'])
-        self.group['Device']['id'] = self.uuid
-        thingTable.put_item(
-            Item=self.group['Device']
+        log.info("Creating table entry")
+        # print(self.group['Device'])
+        item = self.dict_to_item()
+        print(item)
+        self._dynamodb.put_item(
+            Item=item,
+            TableName=self.group['DynamoTable']
         )
 
+    def _remove_table_entry(self):
+        log.info("Remove table entry")
+        self._dynamodb.delete_item(
+            Key={
+                'id': {
+                    'S': self.uuid
+                }
+            },
+            TableName=self.group['DynamoTable']
+        )
+
+
     def create_root_cert(self):
-        if not os.path.isfile(self.group['Cores']['key_path']+"/root-CA.crt"):
-            urllib.urlretrieve("https://www.symantec.com/content/en/us/enterprise/verisign/roots/VeriSign-Class%203-Public-Primary-Certification-Authority-G5.pem",self.group['certs']['keypath']+"/root-CA.crt")
+        if not os.path.isfile(self.group['certs']['key_path']+"/root-CA.crt"):
+            urllib.urlretrieve("https://www.symantec.com/content/en/us/enterprise/verisign/roots/VeriSign-Class%203-Public-Primary-Certification-Authority-G5.pem",self.group['certs']['key_path']+"/root-CA.crt")
 
     def deploy(self):
         if not self.state:
@@ -199,6 +252,8 @@ class GroupCommands(object):
         self.remove_subscriptions()
 
         self._remove_cores()
+
+        self._remove_table_entry()
 
         self.remove_lambdas()
 
@@ -278,8 +333,9 @@ class GroupCommands(object):
         log.info("Lambdas function {0} updated OK!".format(lambda_name))
 
     def create_fn_defn(self):
+        functions = []
         for l in self.group['ExistingLambdas']:
-            functions = []
+            
             functions.append({
                 'Id': l['name'],
                 'FunctionArn': l['aliasarn'],
@@ -615,6 +671,15 @@ class GroupCommands(object):
 
         log.info('Updated on Greengrass! Execute "greengo deploy" to apply')
 
+    def get_core_def(self):
+        CoreDefinition = self.state['CoreDefinition']
+        # print(CoreDefinition['Id'])
+        response = self._gg.get_core_definition_version(
+            CoreDefinitionId=CoreDefinition['Id'],
+            CoreDefinitionVersionId=CoreDefinition['LatestVersion']
+        )
+        print(response)
+
     def _create_cores(self):
         # TODO: Refactor-handle state internally, make callable individually
         #       Maybe reflet dependency tree in self.group/greensgo.yaml and travel it
@@ -654,7 +719,7 @@ class GroupCommands(object):
                     'SyncShadow': core['SyncShadow'],
                     'ThingArn': core_thing['thingArn']
                 })
-
+                
                 _save_keys(core['key_path'], name, keys_cert)
 
                 self._create_ggc_config_file(core['config_path'], "config.json", core_thing)
@@ -734,6 +799,44 @@ class GroupCommands(object):
             policy_name, thing_name, thing_cert_arn))
 
         return policy
+    def _create_shadow(self):
+        exists = os.path.isfile('./initShadow.json')
+        if exists:
+            response = self._iot_data_plane.update_thing_shadow(
+                thingName=self.state['id'],
+                payload=file('./initShadow.json')
+            )
+            print(response)
+        else:
+            print("No file named initShadow.json defined !")
+    
+    # def testing_shadow(self):
+    #     response = self._iot_data_plane.get_thing_shadow(
+    #         thingName=self.state['id']
+    #     )
+    #     state = json.loads(response['payload'].read())
+    #     print(state)
+
+    #     try:
+    #         state['state']['reported']
+    #         print(state['state']['reported']['mode'])
+
+    #         x = { 
+    #             "state": {
+    #                 "desired" : {
+    #                     "mode": "test"
+    #                 },
+    #                 "reported": None
+    #             } 
+    #         }
+    #         response = self._iot_data_plane.update_thing_shadow(
+    #             thingName=self.state['id'],
+    #             payload=json.dumps(x)
+    #         )
+    #     except KeyError:
+    #         print("KeyError")
+    #         return
+
 
     def _create_core_policy(self):
         # TODO: redo as template and read from definition file
@@ -776,6 +879,9 @@ class GroupCommands(object):
             core_thing['thingName'], path, name))
 
         config = {
+            "system": {
+                "shadowSyncTimeout": 10
+            },
             "coreThing": {
                 "caPath": "root-CA.crt",
                 "certPath": core_thing['thingName'] + ".pem",
