@@ -101,8 +101,6 @@ class GroupCommands(object):
             self.create_fn_defn()
         # 5. Create devices (coming soon)
 
-        if 'DynamoTable' in self.group:
-            self._create_table_entry()
         # 6. Create subscriptions
         if 'Subscriptions' in self.group:
             self.create_subscriptions(update_group_version=False)
@@ -115,63 +113,69 @@ class GroupCommands(object):
 
         # init Core Shadow 
         self._create_shadow()
+        
+        # create db entries 
+        self.create_db_entries()
 
         log.info("[END] creating group {0}".format(self.group['Group']['name']))
 
-    def dict_to_item(self):
-        self.group['Device']['id'] = self.uuid.encode('ascii', 'ignore')
-        print(self.group['Device'])
-        raw = self.group['Device']
-        if type(raw) is dict:
-            resp = {}
-            for k,v in raw.iteritems():
-                if type(v) is str:
-                    resp[k] = {
-                        'S': v
-                    }
-                elif type(v) is int:
-                    resp[k] = {
-                        'I': str(v)
-                    }
-                elif type(v) is dict:
-                    resp[k] = {
-                        'M': raw.dict_to_item(v)
-                    }
-                elif type(v) is list:
-                    resp[k] = []
-                    for i in v:
-                        resp[k].append(raw.dict_to_item(i))
 
-            return resp
-        elif type(raw) is str:
-            return {
-                'S': raw
-            }
-        elif type(raw) is int:
-            return {
-                'I': str(raw)
-            }
 
-    def _create_table_entry(self):
-        log.info("Creating table entry")
-        # print(self.group['Device'])
-        item = self.dict_to_item()
-        print(item)
-        self._dynamodb.put_item(
-            Item=item,
-            TableName=self.group['DynamoTable']
-        )
 
-    def _remove_table_entry(self):
-        log.info("Remove table entry")
-        self._dynamodb.delete_item(
-            Key={
-                'id': {
-                    'S': self.uuid
-                }
-            },
-            TableName=self.group['DynamoTable']
-        )
+    # def dict_to_item(self):
+    #     self.group['Device']['id'] = self.uuid.encode('ascii', 'ignore')
+    #     print(self.group['Device'])
+    #     raw = self.group['Device']
+    #     if type(raw) is dict:
+    #         resp = {}
+    #         for k,v in raw.iteritems():
+    #             if type(v) is str:
+    #                 resp[k] = {
+    #                     'S': v
+    #                 }
+    #             elif type(v) is int:
+    #                 resp[k] = {
+    #                     'I': str(v)
+    #                 }
+    #             elif type(v) is dict:
+    #                 resp[k] = {
+    #                     'M': raw.dict_to_item(v)
+    #                 }
+    #             elif type(v) is list:
+    #                 resp[k] = []
+    #                 for i in v:
+    #                     resp[k].append(raw.dict_to_item(i))
+
+    #         return resp
+    #     elif type(raw) is str:
+    #         return {
+    #             'S': raw
+    #         }
+    #     elif type(raw) is int:
+    #         return {
+    #             'I': str(raw)
+    #         }
+
+    # def _create_table_entry(self):
+    #     log.info("Creating table entry")
+    #     # print(self.group['Device'])
+    #     item = self.dict_to_item()
+    #     print(item)
+    #     self._dynamodb.put_item(
+    #         Item=item,
+    #         TableName=self.group['DynamoTable']
+    #     )
+
+    # def _remove_table_entry(self):
+    #     log.info("Remove table entry")
+    #     self._dynamodb.delete_item(
+    #         Key={
+    #             'id': {
+    #                 'S': self.uuid
+    #             }
+    #         },
+    #         TableName=self.group['DynamoTable']
+    #     )
 
 
     def create_root_cert(self):
@@ -253,7 +257,7 @@ class GroupCommands(object):
 
         self._remove_cores()
 
-        self._remove_table_entry()
+        self.remove_db_entries()
 
         self.remove_lambdas()
 
@@ -268,6 +272,31 @@ class GroupCommands(object):
         os.remove(STATE_FILE)
 
         log.info("[END] removing group {0}".format(self.group['Group']['name']))
+
+    # todo don't make it so hard coded
+    def create_db_entries(self):
+        message = {
+            "device":self.uuid,
+            "type":"d1",
+            "var1":"weightKg",
+            "var2":"waterL"
+        }
+
+        response =  self._iot_data_plane.publish(
+            topic='d1/register/'+self.uuid,
+            payload= json.dumps(message)
+        )
+
+    # todo don't make it so hard coded
+    def remove_db_entries(self):
+        message = {
+            "device":self.uuid,
+        }
+
+        response =  self._iot_data_plane.publish(
+            topic='d1/remove/'+self.uuid,
+            payload= json.dumps(message)
+        )
 
     def _default_lambda_role_arn(self):
         if 'LambdaRole' not in self.state:
@@ -799,6 +828,7 @@ class GroupCommands(object):
             policy_name, thing_name, thing_cert_arn))
 
         return policy
+
     def _create_shadow(self):
         exists = os.path.isfile('./initShadow.json')
         if exists:
