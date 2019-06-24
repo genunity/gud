@@ -11,6 +11,7 @@ from botocore.exceptions import ClientError
 import uuid
 import urllib
 
+
 logging.basicConfig(
     format='%(asctime)s|%(name).10s|%(levelname).5s: %(message)s',
     level=logging.WARNING)
@@ -180,7 +181,11 @@ class GroupCommands(object):
 
     def create_root_cert(self):
         if not os.path.isfile(self.group['certs']['key_path']+"/root-CA.crt"):
-            urllib.urlretrieve("https://www.symantec.com/content/en/us/enterprise/verisign/roots/VeriSign-Class%203-Public-Primary-Certification-Authority-G5.pem",self.group['certs']['key_path']+"/root-CA.crt")
+            try:
+                urllib.urlretrieve("https://www.symantec.com/content/en/us/enterprise/verisign/roots/VeriSign-Class%203-Public-Primary-Certification-Authority-G5.pem",self.group['certs']['key_path']+"/root-CA.crt")
+            except:
+                urllib.request.urlretrieve("https://www.symantec.com/content/en/us/enterprise/verisign/roots/VeriSign-Class%203-Public-Primary-Certification-Authority-G5.pem",self.group['certs']['key_path']+"/root-CA.crt")
+
 
     def deploy(self):
         if not self.state:
@@ -840,32 +845,34 @@ class GroupCommands(object):
         else:
             print("No file named initShadow.json defined !")
     
-    # def testing_shadow(self):
-    #     response = self._iot_data_plane.get_thing_shadow(
-    #         thingName=self.state['id']
-    #     )
-    #     state = json.loads(response['payload'].read())
-    #     print(state)
+    def testing_shadow(self):
+        response = self._iot_data_plane.get_thing_shadow(
+            # thingName=self.state['id']
+            thingName='569bd530-bf02-4e5d-bce8-79eed452b342'
+        )
+        state = json.loads(response['payload'].read())
+        print(state)
 
-    #     try:
-    #         state['state']['reported']
-    #         print(state['state']['reported']['mode'])
+        try:
+            state['state']['reported']
+            print(state['state']['reported']['mode'])
 
-    #         x = { 
-    #             "state": {
-    #                 "desired" : {
-    #                     "mode": "test"
-    #                 },
-    #                 "reported": None
-    #             } 
-    #         }
-    #         response = self._iot_data_plane.update_thing_shadow(
-    #             thingName=self.state['id'],
-    #             payload=json.dumps(x)
-    #         )
-    #     except KeyError:
-    #         print("KeyError")
-    #         return
+            x = {
+                "state": {
+                    "desired" : {
+                        "mode": "dt"
+                    },
+                    "reported": None
+                }
+            }
+            response = self._iot_data_plane.update_thing_shadow(
+                # thingName=self.state['id'],
+                thingName='569bd530-bf02-4e5d-bce8-79eed452b342',
+                payload=json.dumps(x)
+            )
+        except KeyError:
+            print("KeyError")
+            return
 
 
     def _create_core_policy(self):
