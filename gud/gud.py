@@ -839,7 +839,7 @@ class GroupCommands(object):
         if exists:
             response = self._iot_data_plane.update_thing_shadow(
                 thingName=self.state['id'],
-                payload=file('./initShadow.json')
+                payload=open('./initShadow.json')
             )
             print(response)
         else:
