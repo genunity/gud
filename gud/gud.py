@@ -10,7 +10,7 @@ from boto3 import session
 from botocore.exceptions import ClientError
 import uuid
 import urllib
-
+from io import open
 
 logging.basicConfig(
     format='%(asctime)s|%(name).10s|%(levelname).5s: %(message)s',
@@ -835,13 +835,16 @@ class GroupCommands(object):
         return policy
 
     def _create_shadow(self):
+
         exists = os.path.isfile('./initShadow.json')
         if exists:
+            f = open('./initShadow.json', encoding='utf-8')
+            text = f.read()    # unicode, not bytes
             response = self._iot_data_plane.update_thing_shadow(
                 thingName=self.state['id'],
-                payload=open('./initShadow.json')
+                payload=text
             )
-            print(response)
+
         else:
             print("No file named initShadow.json defined !")
     
