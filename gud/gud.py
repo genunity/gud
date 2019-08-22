@@ -59,8 +59,16 @@ class GroupCommands(object):
         self.state = _load_state()
         if self.state:
             self.uuid = self.state['id']
+
         else:
+            print('NO STATE')
             self.uuid = str(uuid.uuid4())
+            self.secret = str(uuid.uuid4()) 
+            self.state['dnsSharedSecret'] =self.secret
+            self.state['id']=self.uuid
+        
+            _update_state(self.state) 
+        
         self.name = "G"+self.uuid
         self._LAMBDA_ROLE_NAME = "{0}_Lambda_Role".format(self.name)
 
@@ -86,7 +94,9 @@ class GroupCommands(object):
         core_def, cores = self._create_cores()
         self.state['Cores'] = cores
         self.state['CoreDefinition'] = core_def
-        self.state['id'] = self.uuid
+        self.state['dnsSharedSecret'] =self.secret
+        self.state['id']=self.uuid
+        
         _update_state(self.state)
 
         # 3. Create Resources - policies for local and ML resource access.
@@ -279,6 +289,24 @@ class GroupCommands(object):
         log.info("[END] removing group {0}".format(self.group['Group']['name']))
 
     # todo don't make it so hard coded
+    def create_ddns_entries(self):
+        message = {
+          'hostname': self.state['id']+'.dyn.doop.co.nz.', 
+          'record_type': 'A',
+          'ttl': 60,
+          'shared_secret': self.state['dnsSharedSecret'],
+          'lock_record': False, 
+          'read_privilege': False, 
+          'allow_internal': True,
+        }
+
+        response =  self._iot_data_plane.publish(
+            topic='d1/dnsregister/'+self.state['id'],
+            payload= json.dumps(message)
+        )
+        print(response)
+
+
     def create_db_entries(self):
         message = {
             "device":self.uuid,
