@@ -559,7 +559,10 @@ class GroupCommands(object):
                 'Id': str(i),
                 'Source': self._resolve_subscription_destination(s['Source']),
                 'Target': self._resolve_subscription_destination(s['Target']),
-                'Subject': s['Subject']
+                if s['device']:
+                    'Subject': s['Subject']+'/{0}'.format(self.state['id'])
+                else:
+                    'Subject': s['Subject']
             })
         log.debug("Subscription list is ready:\n{0}".format(pretty(subs)))
 
@@ -598,65 +601,6 @@ class GroupCommands(object):
         self.state.pop('Subscriptions')
         _update_state(self.state)
         log.info("Subscription definition deleted OK!")
-
-    def create_device_subscriptions(self, update_group_version=True):
-        if not self.group.get('DeviceSubs'):
-            log.info("Device Subscriptions not defined. Moving on...")
-            return
-
-        if self.state and self.state.get('DeviceSubs'):
-            log.warning("Previously created Device Subscriptions exists. Remove before creating!")
-            return
-        # MAYBE: don't create subscription before devices and lambdas?
-
-        log.debug("Preparing subscription list...")
-        subs = []
-        for i, s in enumerate(self.group['DeviceSubs']):
-            log.debug("Device Subscription '{0}' - '{1}': {2}->{3}'".format(
-                i, s['Subject'], s['Source'], s['Target']))
-            subs.append({
-                'Id': str(i),
-                'Source': self._resolve_subscription_destination(s['Source']),
-                'Target': self._resolve_subscription_destination(s['Target']),
-                'Subject': s['Subject']+'/{0}'.format(self.state['id'])
-            })
-        log.debug("Device Subscription list is ready:\n{0}".format(pretty(subs)))
-
-        log.info("Creating device subscription definition: '{0}'".format(self.name + '_subscription'))
-        sub_def = self._gg.create_subscription_definition(
-            Name=self.name + '_device_subscription',
-            InitialVersion={'Subscriptions': subs}
-        )
-
-        self.state['DeviceSubs'] = rinse(sub_def)
-        _update_state(self.state)
-
-        sub_def_ver = self._gg.get_subscription_definition_version(
-            SubscriptionDefinitionId=self.state['DeviceSubs']['Id'],
-            SubscriptionDefinitionVersionId=self.state['DeviceSubs']['LatestVersion'])
-
-        self.state['DeviceSubs']['LatestVersionDetails'] = rinse(sub_def_ver)
-        _update_state(self.state)
-
-        if update_group_version:
-            log.info("Updating group version with new Lambdas...")
-            self.create_group_version()
-
-        log.info("Device Subscription definition created OK!")
-
-    def remove_device_subscriptions(self):
-        if not (self.state and self.state.get('DeviceSubs')):
-            log.info("There seem to be nothing to remove.")
-            return
-
-        log.info("Deleting device subscription definition '{0}' Id='{1}".format(
-            self.state['DeviceSubs']['Name'], self.state['DeviceSubs']['Id']))
-        self._gg.delete_subscription_definition(
-            SubscriptionDefinitionId=self.state['DeviceSubs']['Id'])
-
-        self.state.pop('DeviceSubs')
-        _update_state(self.state)
-        log.info("Device Subscription definition deleted OK!")
 
 
     def _resolve_subscription_destination(self, d):
